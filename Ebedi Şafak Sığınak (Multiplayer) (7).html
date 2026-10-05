@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Ebedi Şafak: Sığınak (Multiplayer)</title>
+    <!-- Tailwind CSS for UI overlay -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+            font-family: 'Inter', sans-serif;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        .crosshair-dot {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 6px;
+            height: 6px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 20;
+            box-shadow: 0 0 4px rgba(0,0,0,0.8);
+        }
+        .crosshair-gun {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 22px;
+            height: 22px;
+            border: 2px solid rgba(0, 255, 0, 0.9);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 20;
+            box-shadow: 0 0 6px rgba(0,255,0,0.5);
+        }
+        .crosshair-gun::after {
+            content: '';
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            width: 2px;
+            height: 2px;
+            background: rgba(0, 255, 0, 1);
+        }
+    </style>
+</head>
+<body class="bg-black text-white">
+
+    <div id="canvas-container"></div>
+
+    <!-- Crosshairs -->
+    <div id="default-crosshair" class="crosshair-dot"></div>
+    <div id="gun-crosshair" class="crosshair-gun hidden"></div>
+
+    <!-- Top Status Bar & Fullscreen Button -->
+    <div class="absolute top-4 left-4 right-4 flex justify-between items-center pointer-events-none z-30">
+        <div class="bg-black/70 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 flex items-center gap-4 shadow-xl pointer-events-auto">
+            <div>
+                <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Sağlık</div>
+                <div class="w-32 bg-gray-800 h-3 rounded-full overflow-hidden mt-1 border border-white/10">
+                    <div id="hp-bar" class="bg-emerald-500 h-full w-full transition-all duration-300"></div>
+                </div>
+            </div>
+            <div>
+                <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Zaman Dilimi</div>
+                <div id="time-status" class="text-xs font-black text-yellow-300">Sabah (Şafak)</div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3 pointer-events-auto">
+            <!-- Fullscreen Button -->
+            <button id="btn-fullscreen" class="bg-black/70 hover:bg-black/90 border border-white/20 text-white px-3 py-2 rounded-xl text-xs font-bold backdrop-blur shadow-xl transition active:scale-95 flex items-center gap-1.5">
+                <span>🛜 Tam Ekran</span>
+            </button>
+            <div class="bg-black/70 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 text-xs flex gap-3 shadow-xl font-bold">
+                <div>ET: <span id="meat-count" class="text-amber-400">0</span></div>
+                <div>PİŞMİŞ: <span id="cooked-count" class="text-orange-400">0</span></div>
+                <div>BÖLGE: <span id="safe-status" class="text-green-400">GÜVENLİ</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Right Minimap & Share Link -->
+    <div class="absolute top-20 right-4 flex flex-col gap-2 items-end pointer-events-auto z-30">
+        <div class="bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-[11px] shadow-lg flex items-center gap-2">
+            <span class="text-emerald-400 font-bold">🌐 Ortak Oda Aktif</span>
+            <button id="btn-share" class="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded text-[10px] font-bold">Bağlantıyı Paylaş</button>
+        </div>
+        <div class="bg-black/80 border border-white/20 rounded-xl overflow-hidden w-36 h-36 relative shadow-2xl">
+            <canvas id="minimap-canvas" width="144" height="144" class="w-full h-full"></canvas>
+            <div class="absolute bottom-1 right-1 text-[9px] text-gray-400 bg-black/70 px-1.5 py-0.5 rounded font-mono">RADAR</div>
+        </div>
+    </div>
+
+    <!-- Crafting & Action Panel (Moved to Left, Smaller Size) -->
+    <div class="absolute bottom-40 left-6 flex flex-col gap-1.5 pointer-events-auto z-30 max-w-[150px]">
+        <button id="btn-flashlight" class="px-2.5 py-1.5 bg-yellow-600/70 hover:bg-yellow-600 border border-yellow-400/50 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left">💡 Fener</button>
+        <button id="btn-flight" class="px-2.5 py-1.5 bg-indigo-600/80 hover:bg-indigo-500 border border-indigo-400/30 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left">🦅 Uçma Modu: KAPALI</button>
+        <button id="btn-craft-knife" class="px-2.5 py-1.5 bg-gray-700/80 hover:bg-gray-600 border border-white/20 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left">🔪 Bıçak (10)</button>
+        <button id="btn-craft-pistol" class="px-2.5 py-1.5 bg-blue-700/80 hover:bg-blue-600 border border-blue-400/30 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left">🔫 Tabanca (10)</button>
+        <button id="btn-craft-shotgun" class="px-2.5 py-1.5 bg-purple-700/80 hover:bg-purple-600 border border-purple-400/30 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left">💥 Pompalı (40)</button>
+        <button id="btn-craft-rifle" class="px-2.5 py-1.5 bg-red-700/80 hover:bg-red-600 border border-red-400/30 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left">🎯 Taramalı (50)</button>
+        <button id="btn-time-morning" class="px-2.5 py-1.5 bg-amber-600/80 hover:bg-amber-500 border border-amber-400/30 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left">🌅 Sabah Yap</button>
+        <button id="btn-time-sunset" class="px-2.5 py-1.5 bg-orange-700/80 hover:bg-orange-600 border border-orange-400/30 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left">🌇 Gün Batımı</button>
+        <button id="btn-time-night" class="px-2.5 py-1.5 bg-purple-900/80 hover:bg-purple-800 border border-purple-400/30 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left">🌙 Akşam Yap</button>
+        <button id="btn-cook" class="px-2.5 py-1.5 bg-orange-600/80 hover:bg-orange-500 border border-orange-400/30 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left">🔥 Et Pişir</button>
+        <button id="btn-interact" class="px-2.5 py-1.5 bg-emerald-600/80 hover:bg-emerald-500 border border-emerald-400/30 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left">🚪 Kapı Aç/Kapat</button>
+    </div>
+
+    <!-- Mobile Touch Controls: Joystick on left with Attack, Buttons & Jump on right -->
+    <div class="absolute inset-0 pointer-events-none flex justify-between items-end p-6 z-20 pb-8">
+        <!-- Virtual Joystick & Attack Button on Left -->
+        <div class="flex flex-col gap-4 pointer-events-auto items-start">
+            <button id="btn-attack" class="w-20 h-20 bg-red-600/60 active:bg-red-600/90 border-2 border-red-300/80 rounded-full text-xs font-extrabold flex items-center justify-center shadow-2xl backdrop-blur animate-pulse">ATEŞ / VUR</button>
+            <div id="joystick-base" class="w-32 h-32 bg-white/10 border border-white/20 rounded-full relative pointer-events-auto backdrop-blur flex items-center justify-center shadow-2xl">
+                <div id="joystick-knob" class="w-14 h-14 bg-white/40 border border-white/50 rounded-full absolute transition-transform duration-75"></div>
+            </div>
+        </div>
+
+        <!-- Jump & Action Buttons on Right -->
+        <div class="flex flex-col gap-4 pointer-events-auto items-end">
+            <button id="btn-jump" class="w-20 h-20 bg-blue-500/50 active:bg-blue-500/80 border-2 border-blue-300/80 rounded-full text-sm font-black flex items-center justify-center shadow-2xl backdrop-blur">ZIPLA</button>
+        </div>
+    </div>
+
+    <!-- Jumpscare & Death Overlay -->
+    <div id="jumpscare-overlay" class="absolute inset-0 bg-red-950/95 z-50 flex flex-col items-center justify-center hidden">
+        <div class="text-7xl animate-bounce mb-4">👹</div>
+        <h1 class="text-4xl font-black text-red-500 tracking-wider mb-2">YARATIK TARAFINDAN PARÇALANDIN!</h1>
+        <p id="respawn-timer" class="text-gray-300 text-lg font-medium">5 saniye içinde kulübede yeniden dirileceksin...</p>
+    </div>
+
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const appId = 'ebedi-safak-global-shared-lobby-v1';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        
+        let db, auth, userId;
+        const otherPlayers = {};
+        let lastSyncTime = 0;
+
+        if (firebaseConfig) {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    signInWithCustomToken(auth, __initial_auth_token).then(() => { userId = auth.currentUser.uid; initMultiplayerListeners(); }).catch(() => signInAnonymously(auth).then(() => { userId = auth.currentUser.uid; initMultiplayerListeners(); }));
+                } else {
+                    signInAnonymously(auth).then(() => { userId = auth.currentUser.uid; initMultiplayerListeners(); }).catch(e => console.log(e));
+                }
+            } catch (e) {
+                console.log("Offline mode active");
+            }
+        }
+
+        let scene, camera, renderer;
+        let cameraGroup;
+        let flashlight;
+        let flashLightOn = false;
+
+        let playerHP = 100;
+        let isDead = false;
+        let dayTime = 0;
+        let isNight = false;
+        let monsterActive = false;
+        let inSafeZone = false;
+
+        let currentWeapon = 'none';
+        let rawMeatCount = 0;
+        let cookedMeatCount = 0;
+
+        let isSitting = false;
+        let velocityY = 0;
+        let isJumping = false;
+        const gravity = 0.015;
+
+        let joystickActive = false;
+        let joystickVector = { x: 0, y: 0 };
+        let touchLookActive = false;
+        let lastTouchX = 0, lastTouchY = 0;
+
+        let animals = [];
+        let monster = null;
+        let bullets = [];
+
+        let isFlying = false;
+        let cabinDoor = null;
+        let doorOpen = false;
+        let lookVelocityX = 0;
+        let lookVelocityY = 0;
+
+        // Performance throttling for radar minimap and multiplayer sync
+        let lastMinimapUpdate = 0;
+
+        function initGame() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xaaccff);
+            // Optimized fog distance to reduce GPU fill rate overhead
+            scene.fog = new THREE.FogExp2(0xaaccff, 0.002);
+
+            cameraGroup = new THREE.Group();
+            scene.add(cameraGroup);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.7, 0);
+            cameraGroup.add(camera);
+
+            flashlight = new THREE.SpotLight(0xfffaed, 15, 120, Math.PI / 3, 0.4, 1);
+            flashlight.position.set(0.5, -0.4, 0.2);
+            flashlight.target.position.set(0, 0, -80);
+            camera.add(flashlight);
+            camera.add(flashlight.target);
+            flashlight.visible = false;
+
+            // Optimized WebGLRenderer with power preference and lower max pixel ratio for smooth 60fps mobile performance
+            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", stencil: false, depth: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            dirLight.position.set(200, 400, 200);
+            scene.add(dirLight);
+
+            const floorGeo = new THREE.PlaneGeometry(1500, 1500, 16, 16);
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x334d2b, roughness: 0.9, metalness: 0.1 });
+            const worldFloor = new THREE.Mesh(floorGeo, floorMat);
+            worldFloor.rotation.x = -Math.PI / 2;
+            scene.add(worldFloor);
+
+            // Reduced tree count from 200 to 90 for massive performance boost on mobile GPU
+            const treeTrunkGeo = new THREE.CylinderGeometry(1.5, 2, 8, 5);
+            const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x3b2211, roughness: 0.8 });
+            const treeTopGeo = new THREE.ConeGeometry(6, 22, 5);
+            const treeTopMat = new THREE.MeshStandardMaterial({ color: 0x183015, roughness: 0.8 });
+
+            for (let i = 0; i < 90; i++) {
+                const x = (Math.random() - 0.5) * 1000;
+                const z = (Math.random() - 0.5) * 1000;
+                if (Math.abs(x) < 40 && Math.abs(z) < 40) continue;
+
+                const trunk = new THREE.Mesh(treeTrunkGeo, treeTrunkMat);
+                trunk.position.set(x, 4, z);
+                scene.add(trunk);
+
+                const top = new THREE.Mesh(treeTopGeo, treeTopMat);
+                top.position.set(x, 16, z);
+                scene.add(top);
+            }
+
+            buildCabinAndCamp();
+            spawnWildlife();
+            setupControls();
+
+            document.getElementById('btn-share').addEventListener('click', () => {
+                const shareUrl = window.location.href;
+                if (navigator.clipboard) {
+                    navigator.clipboard.writeText(shareUrl).then(() => alert("Oda bağlantısı kopyalandı!"));
+                } else {
+                    prompt("Oda Bağlantısı:", shareUrl);
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            cameraGroup.position.set(0, 1.7, -15);
+
+            animate();
+        }
+
+        function initMultiplayerListeners() {
+            if (!db || !userId) return;
+            const playersCol = collection(db, 'artifacts', appId, 'public', 'data', 'players');
+            
+            onSnapshot(playersCol, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    const data = change.doc.data();
+                    const pId = data.userId;
+                    if (pId === userId) return;
+
+                    if (change.type === 'added' || change.type === 'modified') {
+                        if (!otherPlayers[pId]) {
+                            const pMesh = new THREE.Mesh(
+                                new THREE.BoxGeometry(1.2, 3, 1.2),
+                                new THREE.MeshStandardMaterial({ color: 0x3b82f6 })
+                            );
+                            scene.add(pMesh);
+                            otherPlayers[pId] = pMesh;
+                        }
+                        otherPlayers[pId].position.set(data.x, data.y, data.z);
+                        otherPlayers[pId].rotation.y = data.ry || 0;
+                    }
+                    if (change.type === 'removed') {
+                        if (otherPlayers[pId]) {
+                            scene.remove(otherPlayers[pId]);
+                            delete otherPlayers[pId];
+                        }
+                    }
+                });
+            }, (err) => console.log(err));
+        }
+
+        function syncPlayerPosition() {
+            if (!db || !userId) return;
+            const now = Date.now();
+            if (now - lastSyncTime < 100) return;
+            lastSyncTime = now;
+
+            const playerDoc = doc(db, 'artifacts', appId, 'public', 'data', 'players', userId);
+            setDoc(playerDoc, {
+                userId: userId,
+                x: cameraGroup.position.x,
+                y: cameraGroup.position.y,
+                z: cameraGroup.position.z,
+                ry: cameraGroup.rotation.y,
+                updatedAt: now
+            }, { merge: true }).catch(e => {});
+        }
+
+        function buildCabinAndCamp() {
+            const cabinGroup = new THREE.Group();
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x54331d, roughness: 0.8 });
+            
+            // Left Wall
+            const leftWall = new THREE.Mesh(new THREE.BoxGeometry(2, 7, 14), wallMat);
+            leftWall.position.set(-6, 3.5, 0);
+            cabinGroup.add(leftWall);
+
+            // Right Wall
+            const rightWall = new THREE.Mesh(new THREE.BoxGeometry(2, 7, 14), wallMat);
+            rightWall.position.set(6, 3.5, 0);
+            cabinGroup.add(rightWall);
+
+            // Back Wall
+            const backWall = new THREE.Mesh(new THREE.BoxGeometry(10, 7, 2), wallMat);
+            backWall.position.set(0, 3.5, -6);
+            cabinGroup.add(backWall);
+
+            // Front Upper Wall
+            const frontUpper = new THREE.Mesh(new THREE.BoxGeometry(7, 3.5, 2), wallMat);
+            frontUpper.position.set(3.5, 5.25, 6);
+            cabinGroup.add(frontUpper);
+
+            // Functional Door
+            const doorMat = new THREE.MeshStandardMaterial({ color: 0x3b2211 });
+            cabinDoor = new THREE.Mesh(new THREE.BoxGeometry(3.5, 7, 0.6), doorMat);
+            cabinDoor.position.set(-2, 3.5, 6);
+            cabinDoor.userData = { isOpen: false };
+            cabinGroup.add(cabinDoor);
+
+            const roofMat = new THREE.MeshStandardMaterial({ color: 0x22130b });
+            const roof = new THREE.Mesh(new THREE.ConeGeometry(10.5, 5, 4), roofMat);
+            roof.position.set(0, 9.5, 0);
+            roof.rotation.y = Math.PI / 4;
+            cabinGroup.add(roof);
+
+            const bed = new THREE.Mesh(new THREE.BoxGeometry(3.5, 1.2, 5.5), new THREE.MeshStandardMaterial({ color: 0x7c4723 }));
+            bed.position.set(-4, 0.6, -3.5);
+            cabinGroup.add(bed);
+
+            const table = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 3), new THREE.MeshStandardMaterial({ color: 0x4a2e18 }));
+            table.position.set(3, 1, -2);
+            cabinGroup.add(table);
+
+            const chair = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), new THREE.MeshStandardMaterial({ color: 0x3d2314 }));
+            chair.position.set(3, 0.6, 1.5);
+            cabinGroup.add(chair);
+
+            const fireplace = new THREE.Mesh(new THREE.BoxGeometry(3, 4, 2.5), new THREE.MeshStandardMaterial({ color: 0x222 }));
+            fireplace.position.set(0, 2, -5.5);
+            cabinGroup.add(fireplace);
+
+            const fireLight = new THREE.PointLight(0xff5500, 3, 20);
+            fireLight.position.set(0, 2, -4.5);
+            cabinGroup.add(fireLight);
+
+            cabinGroup.position.set(0, 0, -25);
+            scene.add(cabinGroup);
+
+            const tent = new THREE.Mesh(new THREE.ConeGeometry(5, 6, 4), new THREE.MeshStandardMaterial({ color: 0x425e3a }));
+            tent.position.set(20, 3, -10);
+            tent.rotation.y = Math.PI / 5;
+            scene.add(tent);
+
+            const campLight = new THREE.PointLight(0xff6600, 3.5, 30);
+            campLight.position.set(0, 1.2, -10);
+            scene.add(campLight);
+        }
+
+        function spawnWildlife() {
+            const animalGeo = new THREE.BoxGeometry(2.2, 1.6, 3.8);
+            const wolfMat = new THREE.MeshStandardMaterial({ color: 0x5a5a5a });
+            const bearMat = new THREE.MeshStandardMaterial({ color: 0x3d2616 });
+
+            // Reduced animal count to 10 for lag-free tick updates
+            for (let i = 0; i < 10; i++) {
+                const isBear = i % 3 === 0;
+                const mesh = new THREE.Mesh(animalGeo, isBear ? bearMat : wolfMat);
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 60 + Math.random() * 200;
+                mesh.position.set(Math.cos(angle) * dist, 1, Math.sin(angle) * dist);
+                scene.add(mesh);
+                animals.push({ mesh, hp: 100, maxHp: 100, alive: true, type: isBear ? 'Ayı' : 'Kurt', speed: isBear ? 0.035 : 0.06 });
+            }
+        }
+
+        function spawnMonster() {
+            if (monster) return;
+            const mGeo = new THREE.BoxGeometry(3.5, 8, 2);
+            const mMat = new THREE.MeshStandardMaterial({ color: 0x080808, roughness: 0.1 });
+            const mMesh = new THREE.Mesh(mGeo, mMat);
+            mMesh.position.set(60, 4, 60);
+            scene.add(mMesh);
+            monster = { mesh: mMesh, hp: 200, speed: 0.1 };
+        }
+
+        function setupControls() {
+            document.getElementById('btn-fullscreen').addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => console.log(err));
+                } else {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                }
+            });
+
+            document.getElementById('btn-flight').addEventListener('click', () => {
+                isFlying = !isFlying;
+                const btn = document.getElementById('btn-flight');
+                btn.innerText = isFlying ? "🦅 Uçma Modu: AÇIK" : "🦅 Uçma Modu: KAPALI";
+                btn.className = isFlying ? "px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 border border-emerald-400 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left" : "px-2.5 py-1.5 bg-indigo-600/80 hover:bg-indigo-500 border border-indigo-400/30 rounded-lg text-[10px] font-bold backdrop-blur shadow-xl transition active:scale-95 text-left";
+            });
+
+            document.getElementById('btn-time-morning').addEventListener('click', () => { 
+                dayTime = 0.1; 
+                isNight = false;
+                monsterActive = false;
+                if (monster) { scene.remove(monster.mesh); monster = null; }
+            });
+            document.getElementById('btn-time-sunset').addEventListener('click', () => { 
+                dayTime = 0.6; 
+                isNight = false;
+            });
+            document.getElementById('btn-time-night').addEventListener('click', () => { 
+                dayTime = 0.9; 
+                isNight = true;
+                if (!monsterActive && !isDead) {
+                    monsterActive = true;
+                    spawnMonster();
+                }
+            });
+
+            const joystickBase = document.getElementById('joystick-base');
+            const joystickKnob = document.getElementById('joystick-knob');
+            let joystickCenter = { x: 0, y: 0 };
+            const maxDist = 40;
+
+            joystickBase.addEventListener('touchstart', (e) => {
+                const rect = joystickBase.getBoundingClientRect();
+                joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                joystickActive = true;
+                handleJoystickMove(e.touches[0]);
+            });
+
+            window.addEventListener('touchmove', (e) => {
+                for (let i = 0; i < e.touches.length; i++) {
+                    const touch = e.touches[i];
+                    if (touch.clientX < window.innerWidth / 2) {
+                        // Joystick touch
+                    } else {
+                        if (!touchLookActive) {
+                            touchLookActive = true;
+                            lastTouchX = touch.clientX;
+                            lastTouchY = touch.clientY;
+                        } else {
+                            const deltaX = touch.clientX - lastTouchX;
+                            const deltaY = touch.clientY - lastTouchY;
+                            lookVelocityX = -deltaX * 0.005;
+                            lookVelocityY = -deltaY * 0.005;
+                            cameraGroup.rotation.y += lookVelocityX;
+                            camera.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.rotation.x + lookVelocityY));
+                            lastTouchX = touch.clientX;
+                            lastTouchY = touch.clientY;
+                        }
+                    }
+                }
+            });
+
+            joystickBase.addEventListener('touchmove', (e) => {
+                joystickActive = true;
+                handleJoystickMove(e.touches[0]);
+            });
+
+            window.addEventListener('touchend', (e) => {
+                if (e.touches.length === 0) {
+                    joystickActive = false;
+                    joystickVector = { x: 0, y: 0 };
+                    joystickKnob.style.transform = `translate(0px, 0px)`;
+                }
+                touchLookActive = false;
+            });
+
+            function handleJoystickMove(touch) {
+                const rect = joystickBase.getBoundingClientRect();
+                const joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                const dx = touch.clientX - joystickCenter.x;
+                const dy = touch.clientY - joystickCenter.y;
+                const dist = Math.hypot(dx, dy);
+                const angle = Math.atan2(dy, dx);
+                const clampedDist = Math.min(dist, maxDist);
+                const knobX = Math.cos(angle) * clampedDist;
+                const knobY = Math.sin(angle) * clampedDist;
+                joystickKnob.style.transform = `translate(${knobX}px, ${knobY}px)`;
+                joystickVector = { x: knobX / maxDist, y: knobY / maxDist };
+            }
+
+            let isMouseDown = false;
+            window.addEventListener('mousedown', (e) => {
+                if (e.clientX > window.innerWidth / 3) {
+                    isMouseDown = true;
+                    lastTouchX = e.clientX;
+                    lastTouchY = e.clientY;
+                }
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (!isMouseDown) return;
+                const deltaX = e.clientX - lastTouchX;
+                const deltaY = e.clientY - lastTouchY;
+                lookVelocityX = -deltaX * 0.005;
+                lookVelocityY = -deltaY * 0.005;
+                cameraGroup.rotation.y += lookVelocityX;
+                camera.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.rotation.x + lookVelocityY));
+                lastTouchX = e.clientX;
+                lastTouchY = e.clientY;
+            });
+            window.addEventListener('mouseup', () => isMouseDown = false);
+
+            document.getElementById('btn-jump').addEventListener('click', () => {
+                if (isFlying) {
+                    velocityY = 0.2;
+                } else if (!isJumping && !isSitting) {
+                    velocityY = 0.28;
+                    isJumping = true;
+                }
+            });
+
+            document.getElementById('btn-flashlight').addEventListener('click', () => {
+                flashLightOn = !flashLightOn;
+                flashlight.visible = flashLightOn;
+            });
+
+            document.getElementById('btn-craft-knife').addEventListener('click', () => equipWeapon('knife'));
+            document.getElementById('btn-craft-pistol').addEventListener('click', () => equipWeapon('pistol'));
+            document.getElementById('btn-craft-shotgun').addEventListener('click', () => equipWeapon('shotgun'));
+            document.getElementById('btn-craft-rifle').addEventListener('click', () => equipWeapon('rifle'));
+
+            document.getElementById('btn-cook').addEventListener('click', () => {
+                if (rawMeatCount > 0) {
+                    rawMeatCount--;
+                    cookedMeatCount++;
+                    updateHUD();
+                }
+            });
+
+            document.getElementById('btn-attack').addEventListener('click', () => performAttack());
+            document.getElementById('btn-interact').addEventListener('click', () => performInteraction());
+        }
+
+        function equipWeapon(type) {
+            currentWeapon = type;
+            const dot = document.getElementById('default-crosshair');
+            const gunCross = document.getElementById('gun-crosshair');
+            if (type === 'none') {
+                dot.classList.remove('hidden');
+                gunCross.classList.add('hidden');
+            } else {
+                dot.classList.add('hidden');
+                gunCross.classList.remove('hidden');
+            }
+        }
+
+        function performAttack() {
+            if (isDead) return;
+            const camPos = cameraGroup.position;
+            const camDir = new THREE.Vector3();
+            camera.getWorldDirection(camDir);
+
+            let damage = 5;
+            if (currentWeapon === 'knife') damage = 10;
+            else if (currentWeapon === 'pistol') damage = 10;
+            else if (currentWeapon === 'shotgun') damage = 40;
+            else if (currentWeapon === 'rifle') damage = 50;
+
+            if (currentWeapon !== 'none' && currentWeapon !== 'knife') {
+                const bGeo = new THREE.SphereGeometry(0.25, 8, 8);
+                const bMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+                const bMesh = new THREE.Mesh(bGeo, bMat);
+                bMesh.position.copy(camPos);
+                scene.add(bMesh);
+                bullets.push({ mesh: bMesh, dir: camDir.clone(), life: 60 });
+            }
+
+            animals.forEach(anim => {
+                if (!anim.alive) return;
+                if (anim.mesh.position.distanceTo(camPos) < 16) {
+                    anim.hp -= damage;
+                    if (anim.hp <= 0) {
+                        anim.alive = false;
+                        anim.mesh.rotation.z = Math.PI / 2;
+                        anim.mesh.position.y = 0.5;
+                        rawMeatCount += 2;
+                        updateHUD();
+                    }
+                }
+            });
+
+            if (monster) {
+                if (monster.mesh.position.distanceTo(camPos) < 14) {
+                    monster.hp -= damage;
+                    if (monster.hp <= 0) {
+                        scene.remove(monster.mesh);
+                        monster = null;
+                        monsterActive = false;
+                    }
+                }
+            }
+        }
+
+        function performInteraction() {
+            const camPos = cameraGroup.position;
+            // Check cabin door interaction (Cabin is at Z = -25)
+            const doorWorldPos = new THREE.Vector3(0, 0, -25).add(new THREE.Vector3(-2, 0, 6));
+            if (camPos.distanceTo(doorWorldPos) < 8) {
+                doorOpen = !doorOpen;
+                if (cabinDoor) {
+                    cabinDoor.position.x = doorOpen ? -4.5 : -2;
+                    cabinDoor.rotation.y = doorOpen ? Math.PI / 2 : 0;
+                }
+                return;
+            }
+
+            if (camPos.distanceTo(new THREE.Vector3(-4, 1.7, -28.5)) < 6) {
+                dayTime = 0.1;
+                isNight = false;
+                if (monster) { scene.remove(monster.mesh); monster = null; monsterActive = false; }
+                return;
+            }
+            if (isSitting) {
+                isSitting = false;
+                cameraGroup.position.y = 1.7;
+            } else {
+                if (camPos.distanceTo(new THREE.Vector3(3, 1.7, -23.5)) < 5) {
+                    isSitting = true;
+                    cameraGroup.position.set(3, 1.2, -23.5);
+                }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Inertia decay for look rotation when touch is released
+            if (!touchLookActive && !isMouseDown) {
+                lookVelocityX *= 0.85;
+                lookVelocityY *= 0.85;
+                cameraGroup.rotation.y += lookVelocityX;
+                camera.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.rotation.x + lookVelocityY));
+            }
+
+            if ((joystickVector.x !== 0 || joystickVector.y !== 0) && !isSitting) {
+                const speed = isFlying ? 0.45 : 0.22;
+                const forward = new THREE.Vector3();
+                camera.getWorldDirection(forward);
+                if (!isFlying) forward.y = 0;
+                forward.normalize();
+
+                const side = new THREE.Vector3(-forward.z, 0, forward.x);
+                
+                // Unrestricted movement across the entire open world map
+                cameraGroup.position.addScaledVector(forward, -joystickVector.y * speed);
+                if (!isFlying) {
+                    cameraGroup.position.addScaledVector(side, joystickVector.x * speed);
+                } else {
+                    cameraGroup.position.y += joystickVector.x * speed * 0.5;
+                }
+                syncPlayerPosition();
+            }
+
+            if (isFlying) {
+                // Free flight mode allows going anywhere in the 3D space
+            } else if (isJumping) {
+                cameraGroup.position.y += velocityY;
+                velocityY -= gravity;
+                if (cameraGroup.position.y <= 1.7) {
+                    cameraGroup.position.y = 1.7;
+                    isJumping = false;
+                    velocityY = 0;
+                }
+                syncPlayerPosition();
+            }
+
+            const cabinCenter = new THREE.Vector3(0, 0, -25);
+            const distToCabin = cameraGroup.position.distanceTo(cabinCenter);
+            inSafeZone = distToCabin < 14 && !isFlying && (!doorOpen || distToCabin > 10);
+
+            // Realistic Day-Night Cycle
+            dayTime += 0.00035;
+            if (dayTime > 1) dayTime = 0;
+
+            let timeText = "";
+            let timeColorClass = "";
+            let skyHex = 0xaaccff;
+
+            if (dayTime < 0.25) {
+                timeText = "Sabah (Şafak)";
+                timeColorClass = "text-yellow-300";
+                skyHex = 0xaaccff;
+                isNight = false;
+                monsterActive = false;
+                if (monster) { scene.remove(monster.mesh); monster = null; }
+            } else if (dayTime < 0.5) {
+                timeText = "Öğlen (Güneşli)";
+                timeColorClass = "text-amber-400";
+                skyHex = 0x87CEEB;
+                isNight = false;
+                monsterActive = false;
+                if (monster) { scene.remove(monster.mesh); monster = null; }
+            } else if (dayTime < 0.75) {
+                timeText = "Gün Batımı";
+                timeColorClass = "text-orange-400";
+                skyHex = 0xd97736;
+                isNight = false;
+            } else {
+                timeText = "Akşam (Tehlikeli)";
+                timeColorClass = "text-purple-400";
+                skyHex = 0x1a2233; // Brighter dark night to avoid pitch black invisibility
+                isNight = true;
+                if (!monsterActive && !isDead) {
+                    monsterActive = true;
+                    spawnMonster();
+                }
+            }
+
+            document.getElementById('time-status').innerText = timeText;
+            document.getElementById('time-status').className = `text-xs font-black ${timeColorClass}`;
+            scene.background.setHex(skyHex);
+            if (scene.fog) scene.fog.color.setHex(skyHex);
+
+            if (monster && monsterActive && !isDead) {
+                const mPos = monster.mesh.position;
+                const pPos = cameraGroup.position.clone();
+                
+                // If player is inside a closed cabin, monster stays outside barking/trying to enter
+                const playerInClosedCabin = distToCabin < 14 && !doorOpen && !isFlying;
+                if (!playerInClosedCabin) {
+                    const mDir = new THREE.Vector3().subVectors(pPos, mPos).normalize();
+                    mPos.addScaledVector(mDir, monster.speed);
+                    monster.mesh.lookAt(pPos);
+
+                    // If flying or high up, monster tries to jump towards player
+                    if (isFlying && pPos.y > 4) {
+                        monster.mesh.position.y = Math.min(pPos.y, monster.mesh.position.y + 0.1);
+                    } else {
+                        monster.mesh.position.y = Math.max(4, monster.mesh.position.y - 0.1);
+                    }
+
+                    if (mPos.distanceTo(pPos) < 4.0) {
+                        triggerJumpscare();
+                    }
+                }
+            }
+
+            animals.forEach(anim => {
+                if (!anim.alive) return;
+                const dist = anim.mesh.position.distanceTo(cameraGroup.position);
+                if (dist < 45 && dist > 3) {
+                    const aDir = new THREE.Vector3().subVectors(cameraGroup.position, anim.mesh.position).normalize();
+                    anim.mesh.position.addScaledVector(aDir, anim.speed);
+                    anim.mesh.lookAt(cameraGroup.position);
+                }
+            });
+
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.mesh.position.addScaledVector(b.dir, 1.5);
+                b.life--;
+                if (b.life <= 0) {
+                    scene.remove(b.mesh);
+                    bullets.splice(i, 1);
+                }
+            }
+
+            // Update minimap at lower frame intervals to prevent layout stutter
+            const nowTime = Date.now();
+            if (nowTime - lastMinimapUpdate > 100) {
+                updateMinimap();
+                lastMinimapUpdate = nowTime;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function triggerJumpscare() {
+            isDead = true;
+            document.getElementById('jumpscare-overlay').classList.remove('hidden');
+            let countdown = 5;
+            const timerEl = document.getElementById('respawn-timer');
+
+            const interval = setInterval(() => {
+                countdown--;
+                timerEl.innerText = `${countdown} saniye içinde kulübede yeniden dirileceksin...`;
+                if (countdown <= 0) {
+                    clearInterval(interval);
+                    document.getElementById('jumpscare-overlay').classList.add('hidden');
+                    cameraGroup.position.set(0, 1.7, -20);
+                    playerHP = 100;
+                    isDead = false;
+                    updateHUD();
+                    if (monster) { scene.remove(monster.mesh); monster = null; monsterActive = false; }
+                }
+            }, 1000);
+        }
+
+        function updateHUD() {
+            document.getElementById('hp-bar').style.width = playerHP + '%';
+            document.getElementById('meat-count').innerText = rawMeatCount;
+            document.getElementById('cooked-count').innerText = cookedMeatCount;
+            document.getElementById('safe-status').innerText = inSafeZone ? 'GÜVENLİ' : 'DIŞARIDA';
+            document.getElementById('safe-status').className = inSafeZone ? 'text-green-400 font-bold' : 'text-red-400 font-bold';
+        }
+
+        function updateMinimap() {
+            const canvas = document.getElementById('minimap-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, 144, 144);
+
+            const px = 72 + cameraGroup.position.x * 0.1;
+            const pz = 72 + cameraGroup.position.z * 0.1;
+
+            ctx.fillStyle = '#54331d';
+            ctx.fillRect(72, 47, 10, 10);
+
+            ctx.fillStyle = '#00ffcc';
+            ctx.beginPath();
+            ctx.arc(px, pz, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#3b82f6';
+            Object.values(otherPlayers).forEach(op => {
+                const opx = 72 + op.position.x * 0.1;
+                const opz = 72 + op.position.z * 0.1;
+                ctx.fillRect(opx - 2, opz - 2, 4, 4);
+            });
+        }
+
+        window.onload = initGame;
+    </script>
+</body>
+</html>
